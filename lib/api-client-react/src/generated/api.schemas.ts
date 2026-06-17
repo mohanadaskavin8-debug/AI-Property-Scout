@@ -9,6 +9,15 @@ export interface HealthStatus {
   status: string;
 }
 
+export type PropertyGeocodeStatus = typeof PropertyGeocodeStatus[keyof typeof PropertyGeocodeStatus];
+
+
+export const PropertyGeocodeStatus = {
+  ok: 'ok',
+  pending: 'pending',
+  failed: 'failed',
+} as const;
+
 export interface Property {
   id: string;
   address: string;
@@ -32,6 +41,7 @@ export interface Property {
   lat?: number | null;
   /** @nullable */
   lng?: number | null;
+  geocodeStatus?: PropertyGeocodeStatus;
   /** @nullable */
   mlsId?: string | null;
   /** @nullable */
@@ -43,6 +53,28 @@ export interface Property {
   source: string;
   /** @nullable */
   matchScore?: number | null;
+}
+
+export interface GeocodeStatusInput {
+  ids: string[];
+}
+
+export type GeocodeStatusEntryGeocodeStatus = typeof GeocodeStatusEntryGeocodeStatus[keyof typeof GeocodeStatusEntryGeocodeStatus];
+
+
+export const GeocodeStatusEntryGeocodeStatus = {
+  ok: 'ok',
+  pending: 'pending',
+  failed: 'failed',
+} as const;
+
+export interface GeocodeStatusEntry {
+  id: string;
+  /** @nullable */
+  lat?: number | null;
+  /** @nullable */
+  lng?: number | null;
+  geocodeStatus: GeocodeStatusEntryGeocodeStatus;
 }
 
 export interface PropertySearchInput {
@@ -143,6 +175,58 @@ export interface OpenaiConversationWithMessages {
 
 export interface OpenaiError {
   error: string;
+}
+
+export interface SavedSearch {
+  id: number;
+  /** @nullable */
+  name?: string | null;
+  query: string;
+  parsedFilters?: ParsedFilters;
+  alertEnabled: boolean;
+  /** @nullable */
+  lastRunAt?: string | null;
+  /** @nullable */
+  lastResultCount?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedSearchInput {
+  query: string;
+  /** @nullable */
+  name?: string | null;
+  parsedFilters?: ParsedFilters;
+  alertEnabled?: boolean;
+}
+
+export interface VisitedProperty {
+  id: number;
+  propertyData: Property;
+  visitCount: number;
+  firstVisitedAt: string;
+  lastVisitedAt: string;
+}
+
+export interface VisitedPropertyInput {
+  propertyData: Property;
+}
+
+export interface Notification {
+  id: number;
+  type: string;
+  title: string;
+  /** @nullable */
+  body?: string | null;
+  /** @nullable */
+  href?: string | null;
+  /** @nullable */
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface UnreadCount {
+  count: number;
 }
 
 export type GetMarketInsightsParams = {

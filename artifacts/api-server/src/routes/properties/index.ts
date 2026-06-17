@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import {
   SearchPropertiesBody,
   GetPropertyParams,
+  GetGeocodeStatusBody,
 } from "@workspace/api-zod";
 import {
   parsePromptToFilters,
@@ -12,8 +13,10 @@ import {
   searchCanadianListings,
   getFeaturedCanadianListings,
   getStoredProperty,
+  enrichStoredProperty,
   hasFirecrawl,
 } from "../../lib/firecrawlSearch";
+import { getGeocodeStatus } from "../../lib/geocode";
 import { db } from "@workspace/db";
 import { searchesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
@@ -119,6 +122,19 @@ router.get("/properties/trending", async (_req, res): Promise<void> => {
   res.json(results);
 });
 
+// Polled by the map to resolve coordinates for listings that were still
+// "pending" geocoding at search time. Public (browsing is open).
+router.post("/properties/geocode-status", async (req, res): Promise<void> => {
+  const parsed = GetGeocodeStatusBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const ids = parsed.data.ids.slice(0, 100);
+  const statuses = await getGeocodeStatus(ids);
+  res.json(statuses);
+});
+
 router.get("/properties/:id", async (req, res): Promise<void> => {
   const params = GetPropertyParams.safeParse(req.params);
   if (!params.success) {
@@ -128,13 +144,27 @@ router.get("/properties/:id", async (req, res): Promise<void> => {
 
   const { id } = params.data;
 
-  const property = getStoredProperty(id);
-  if (property) {
-    res.json(property);
+  if (!getStoredProperty(id)) {
+    res.status(404).json({ error: "Property not found" });
     return;
   }
 
-  res.status(404).json({ error: "Property not found" });
+  // Enrich with REAL detail-page data (description, year built, MLS #, full
+  // photo gallery, etc.) scraped on demand and cached. Best-effort: if the
+  // scrape yields nothing, the listing's known fields are served as-is and the
+  // UI honestly shows "Not available" for what we couldn't verify.
+  try {
+    await enrichStoredProperty(id);
+  } catch (err) {
+    req.log.warn({ err, id }, "Detail enrichment failed; serving base listing");
+  }
+
+  const enriched = getStoredProperty(id);
+  if (!enriched) {
+    res.status(404).json({ error: "Property not found" });
+    return;
+  }
+  res.json(enriched);
 });
 
 export default router;

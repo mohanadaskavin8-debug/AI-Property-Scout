@@ -35,6 +35,7 @@ export interface PropertyResult {
   pricePerSqft: number | null;
   source: string;
   matchScore: number | null;
+  geocodeStatus?: "ok" | "pending" | "failed";
 }
 
 export async function parsePromptToFilters(prompt: string): Promise<ParsedFilters> {

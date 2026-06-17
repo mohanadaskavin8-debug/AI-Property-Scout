@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { motion, useMotionTemplate, useMotionValue } from "framer-motion";
 import { Heart, MapPin, BedDouble, Bath, Square } from "lucide-react";
-import { Property, useAddFavorite, useRemoveFavorite, useListFavorites } from "@workspace/api-client-react";
+import { Property } from "@workspace/api-client-react";
+import { useFavorite } from "@/hooks/useFavorite";
+import { formatPrice } from "@/lib/format";
 
 interface PropertyCardProps {
   property: Property;
@@ -14,11 +16,8 @@ export function PropertyCard({ property, isFavorite: propIsFavorite }: PropertyC
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
-  const { data: favorites, refetch: refetchFavorites } = useListFavorites();
-  const addFavorite = useAddFavorite();
-  const removeFavorite = useRemoveFavorite();
-
-  const isFavorite = propIsFavorite || favorites?.some(f => f.propertyData.id === property.id);
+  const { isFavorite: favFromHook, toggle } = useFavorite(property);
+  const isFavorite = propIsFavorite || favFromHook;
 
   function handleMouseMove({ currentTarget, clientX, clientY }: React.MouseEvent) {
     const { left, top } = currentTarget.getBoundingClientRect();
@@ -26,26 +25,9 @@ export function PropertyCard({ property, isFavorite: propIsFavorite }: PropertyC
     mouseY.set(clientY - top);
   }
 
-  const handleToggleFavorite = async (e: React.MouseEvent) => {
+  const handleToggleFavorite = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (isFavorite) {
-      const fav = favorites?.find(f => f.propertyData.id === property.id);
-      if (fav) {
-        await removeFavorite.mutateAsync({ id: fav.id });
-        refetchFavorites();
-      }
-    } else {
-      await addFavorite.mutateAsync({ data: { propertyData: property } });
-      refetchFavorites();
-    }
-  };
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0,
-    }).format(price);
+    void toggle();
   };
 
   const imageSrc = property.photos?.[0] || "";

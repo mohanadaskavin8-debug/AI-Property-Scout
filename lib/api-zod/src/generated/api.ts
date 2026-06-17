@@ -43,6 +43,7 @@ export const SearchPropertiesResponse = zod.object({
   "photos": zod.array(zod.string()),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
   "mlsId": zod.string().nullish(),
   "listingUrl": zod.string().nullish(),
   "daysOnMarket": zod.number().nullish(),
@@ -85,6 +86,7 @@ export const GetFeaturedPropertiesResponseItem = zod.object({
   "photos": zod.array(zod.string()),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
   "mlsId": zod.string().nullish(),
   "listingUrl": zod.string().nullish(),
   "daysOnMarket": zod.number().nullish(),
@@ -104,6 +106,22 @@ export const GetTrendingSearchesResponseItem = zod.object({
   "location": zod.string().nullish()
 })
 export const GetTrendingSearchesResponse = zod.array(GetTrendingSearchesResponseItem)
+
+
+/**
+ * @summary Resolve geocode coordinates/status for property IDs (polled by the map)
+ */
+export const GetGeocodeStatusBody = zod.object({
+  "ids": zod.array(zod.string())
+})
+
+export const GetGeocodeStatusResponseItem = zod.object({
+  "id": zod.string(),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed'])
+})
+export const GetGeocodeStatusResponse = zod.array(GetGeocodeStatusResponseItem)
 
 
 /**
@@ -129,6 +147,7 @@ export const GetPropertyResponse = zod.object({
   "photos": zod.array(zod.string()),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
   "mlsId": zod.string().nullish(),
   "listingUrl": zod.string().nullish(),
   "daysOnMarket": zod.number().nullish(),
@@ -159,6 +178,7 @@ export const ListFavoritesResponseItem = zod.object({
   "photos": zod.array(zod.string()),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
   "mlsId": zod.string().nullish(),
   "listingUrl": zod.string().nullish(),
   "daysOnMarket": zod.number().nullish(),
@@ -191,6 +211,7 @@ export const AddFavoriteBody = zod.object({
   "photos": zod.array(zod.string()),
   "lat": zod.number().nullish(),
   "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
   "mlsId": zod.string().nullish(),
   "listingUrl": zod.string().nullish(),
   "daysOnMarket": zod.number().nullish(),
@@ -302,6 +323,239 @@ export const SendOpenaiMessageParams = zod.object({
 
 export const SendOpenaiMessageBody = zod.object({
   "content": zod.string()
+})
+
+
+/**
+ * @summary List the authenticated user's saved searches
+ */
+export const ListSavedSearchesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string().nullish(),
+  "query": zod.string(),
+  "parsedFilters": zod.object({
+  "location": zod.string().nullish(),
+  "minPrice": zod.number().nullish(),
+  "maxPrice": zod.number().nullish(),
+  "minBedrooms": zod.number().nullish(),
+  "minBathrooms": zod.number().nullish(),
+  "propertyType": zod.string().nullish(),
+  "minSqft": zod.number().nullish(),
+  "maxSqft": zod.number().nullish(),
+  "keywords": zod.array(zod.string()).optional()
+}).optional(),
+  "alertEnabled": zod.boolean(),
+  "lastRunAt": zod.coerce.date().nullish(),
+  "lastResultCount": zod.number().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListSavedSearchesResponse = zod.array(ListSavedSearchesResponseItem)
+
+
+/**
+ * @summary Save a search for the authenticated user
+ */
+export const CreateSavedSearchBody = zod.object({
+  "query": zod.string(),
+  "name": zod.string().nullish(),
+  "parsedFilters": zod.object({
+  "location": zod.string().nullish(),
+  "minPrice": zod.number().nullish(),
+  "maxPrice": zod.number().nullish(),
+  "minBedrooms": zod.number().nullish(),
+  "minBathrooms": zod.number().nullish(),
+  "propertyType": zod.string().nullish(),
+  "minSqft": zod.number().nullish(),
+  "maxSqft": zod.number().nullish(),
+  "keywords": zod.array(zod.string()).optional()
+}).optional(),
+  "alertEnabled": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Delete a saved search
+ */
+export const DeleteSavedSearchParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+/**
+ * @summary Re-run a saved search and return fresh real listings
+ */
+export const RunSavedSearchParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RunSavedSearchResponse = zod.object({
+  "properties": zod.array(zod.object({
+  "id": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "state": zod.string(),
+  "zipCode": zod.string(),
+  "price": zod.number(),
+  "bedrooms": zod.number().nullish(),
+  "bathrooms": zod.number().nullish(),
+  "sqft": zod.number().nullish(),
+  "propertyType": zod.string(),
+  "yearBuilt": zod.number().nullish(),
+  "description": zod.string().nullish(),
+  "photos": zod.array(zod.string()),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
+  "mlsId": zod.string().nullish(),
+  "listingUrl": zod.string().nullish(),
+  "daysOnMarket": zod.number().nullish(),
+  "pricePerSqft": zod.number().nullish(),
+  "source": zod.string(),
+  "matchScore": zod.number().nullish()
+})),
+  "totalCount": zod.number(),
+  "searchSummary": zod.string(),
+  "parsedFilters": zod.object({
+  "location": zod.string().nullish(),
+  "minPrice": zod.number().nullish(),
+  "maxPrice": zod.number().nullish(),
+  "minBedrooms": zod.number().nullish(),
+  "minBathrooms": zod.number().nullish(),
+  "propertyType": zod.string().nullish(),
+  "minSqft": zod.number().nullish(),
+  "maxSqft": zod.number().nullish(),
+  "keywords": zod.array(zod.string()).optional()
+})
+})
+
+
+/**
+ * @summary List properties the authenticated user has viewed
+ */
+export const ListVisitedPropertiesResponseItem = zod.object({
+  "id": zod.number(),
+  "propertyData": zod.object({
+  "id": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "state": zod.string(),
+  "zipCode": zod.string(),
+  "price": zod.number(),
+  "bedrooms": zod.number().nullish(),
+  "bathrooms": zod.number().nullish(),
+  "sqft": zod.number().nullish(),
+  "propertyType": zod.string(),
+  "yearBuilt": zod.number().nullish(),
+  "description": zod.string().nullish(),
+  "photos": zod.array(zod.string()),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
+  "mlsId": zod.string().nullish(),
+  "listingUrl": zod.string().nullish(),
+  "daysOnMarket": zod.number().nullish(),
+  "pricePerSqft": zod.number().nullish(),
+  "source": zod.string(),
+  "matchScore": zod.number().nullish()
+}),
+  "visitCount": zod.number(),
+  "firstVisitedAt": zod.coerce.date(),
+  "lastVisitedAt": zod.coerce.date()
+})
+export const ListVisitedPropertiesResponse = zod.array(ListVisitedPropertiesResponseItem)
+
+
+/**
+ * @summary Record that the authenticated user viewed a property
+ */
+export const RecordVisitedPropertyBody = zod.object({
+  "propertyData": zod.object({
+  "id": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "state": zod.string(),
+  "zipCode": zod.string(),
+  "price": zod.number(),
+  "bedrooms": zod.number().nullish(),
+  "bathrooms": zod.number().nullish(),
+  "sqft": zod.number().nullish(),
+  "propertyType": zod.string(),
+  "yearBuilt": zod.number().nullish(),
+  "description": zod.string().nullish(),
+  "photos": zod.array(zod.string()),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
+  "mlsId": zod.string().nullish(),
+  "listingUrl": zod.string().nullish(),
+  "daysOnMarket": zod.number().nullish(),
+  "pricePerSqft": zod.number().nullish(),
+  "source": zod.string(),
+  "matchScore": zod.number().nullish()
+})
+})
+
+export const RecordVisitedPropertyResponse = zod.object({
+  "id": zod.number(),
+  "propertyData": zod.object({
+  "id": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "state": zod.string(),
+  "zipCode": zod.string(),
+  "price": zod.number(),
+  "bedrooms": zod.number().nullish(),
+  "bathrooms": zod.number().nullish(),
+  "sqft": zod.number().nullish(),
+  "propertyType": zod.string(),
+  "yearBuilt": zod.number().nullish(),
+  "description": zod.string().nullish(),
+  "photos": zod.array(zod.string()),
+  "lat": zod.number().nullish(),
+  "lng": zod.number().nullish(),
+  "geocodeStatus": zod.enum(['ok', 'pending', 'failed']).optional(),
+  "mlsId": zod.string().nullish(),
+  "listingUrl": zod.string().nullish(),
+  "daysOnMarket": zod.number().nullish(),
+  "pricePerSqft": zod.number().nullish(),
+  "source": zod.string(),
+  "matchScore": zod.number().nullish()
+}),
+  "visitCount": zod.number(),
+  "firstVisitedAt": zod.coerce.date(),
+  "lastVisitedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List the authenticated user's notifications
+ */
+export const ListNotificationsResponseItem = zod.object({
+  "id": zod.number(),
+  "type": zod.string(),
+  "title": zod.string(),
+  "body": zod.string().nullish(),
+  "href": zod.string().nullish(),
+  "readAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const ListNotificationsResponse = zod.array(ListNotificationsResponseItem)
+
+
+/**
+ * @summary Count unread notifications for the authenticated user
+ */
+export const GetUnreadNotificationCountResponse = zod.object({
+  "count": zod.number()
+})
+
+
+/**
+ * @summary Mark a single notification as read
+ */
+export const MarkNotificationReadParams = zod.object({
+  "id": zod.coerce.number()
 })
 
 

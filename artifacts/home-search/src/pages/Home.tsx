@@ -7,10 +7,10 @@ import { PropertyCard } from "@/components/PropertyCard";
 import { Layout } from "@/components/Layout";
 
 const PLACEHOLDERS = [
-  "Modern loft in NYC under $1M",
-  "4BR house with pool in Miami",
-  "Walkable neighborhood, good schools, mountain views",
-  "Cozy cabin near Lake Tahoe"
+  "Modern condo in downtown Toronto under $900K",
+  "4-bed house with a backyard in Vancouver",
+  "Walkable neighbourhood near transit, great schools in Ottawa",
+  "Lakeside cottage near Muskoka"
 ];
 
 export default function Home() {

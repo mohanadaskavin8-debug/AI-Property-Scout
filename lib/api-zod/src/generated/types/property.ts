@@ -5,6 +5,7 @@
  * Nestly AI Home Search API
  * OpenAPI spec version: 0.1.0
  */
+import type { PropertyGeocodeStatus } from './propertyGeocodeStatus';
 
 export interface Property {
   id: string;
@@ -29,6 +30,7 @@ export interface Property {
   lat?: number | null;
   /** @nullable */
   lng?: number | null;
+  geocodeStatus?: PropertyGeocodeStatus;
   /** @nullable */
   mlsId?: string | null;
   /** @nullable */

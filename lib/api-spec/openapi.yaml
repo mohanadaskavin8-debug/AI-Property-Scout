@@ -18,6 +18,12 @@ tags:
     description: Market insights and statistics
   - name: openai
     description: OpenAI AI chat operations
+  - name: saved-searches
+    description: Per-user saved searches
+  - name: visited-properties
+    description: Per-user viewed property history
+  - name: notifications
+    description: Per-user in-app notifications
 paths:
   /healthz:
     get:
@@ -81,6 +87,27 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TrendingSearch"
+
+  /properties/geocode-status:
+    post:
+      operationId: getGeocodeStatus
+      tags: [properties]
+      summary: Resolve geocode coordinates/status for property IDs (polled by the map)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GeocodeStatusInput"
+      responses:
+        "200":
+          description: Geocode status for the requested properties
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GeocodeStatusEntry"
 
   /properties/{id}:
     get:
@@ -297,6 +324,174 @@ paths:
           content:
             text/event-stream: {}
 
+  /saved-searches:
+    get:
+      operationId: listSavedSearches
+      tags: [saved-searches]
+      summary: List the authenticated user's saved searches
+      responses:
+        "200":
+          description: List of saved searches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SavedSearch"
+    post:
+      operationId: createSavedSearch
+      tags: [saved-searches]
+      summary: Save a search for the authenticated user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavedSearchInput"
+      responses:
+        "201":
+          description: Created saved search
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedSearch"
+
+  /saved-searches/{id}:
+    delete:
+      operationId: deleteSavedSearch
+      tags: [saved-searches]
+      summary: Delete a saved search
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /saved-searches/{id}/run:
+    post:
+      operationId: runSavedSearch
+      tags: [saved-searches]
+      summary: Re-run a saved search and return fresh real listings
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Fresh search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertySearchResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /visited-properties:
+    get:
+      operationId: listVisitedProperties
+      tags: [visited-properties]
+      summary: List properties the authenticated user has viewed
+      responses:
+        "200":
+          description: List of visited properties
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VisitedProperty"
+    post:
+      operationId: recordVisitedProperty
+      tags: [visited-properties]
+      summary: Record that the authenticated user viewed a property
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VisitedPropertyInput"
+      responses:
+        "200":
+          description: Recorded visit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisitedProperty"
+
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List the authenticated user's notifications
+      responses:
+        "200":
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /notifications/unread-count:
+    get:
+      operationId: getUnreadNotificationCount
+      tags: [notifications]
+      summary: Count unread notifications for the authenticated user
+      responses:
+        "200":
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnreadCount"
+
+  /notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all notifications as read
+      responses:
+        "204":
+          description: All marked read
+
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark a single notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Marked read
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -342,6 +537,9 @@ components:
           type: ["number", "null"]
         lng:
           type: ["number", "null"]
+        geocodeStatus:
+          type: string
+          enum: [ok, pending, failed]
         mlsId:
           type: ["string", "null"]
         listingUrl:
@@ -364,6 +562,32 @@ components:
         - propertyType
         - photos
         - source
+
+    GeocodeStatusInput:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+      required:
+        - ids
+
+    GeocodeStatusEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        lat:
+          type: ["number", "null"]
+        lng:
+          type: ["number", "null"]
+        geocodeStatus:
+          type: string
+          enum: [ok, pending, failed]
+      required:
+        - id
+        - geocodeStatus
 
     PropertySearchInput:
       type: object
@@ -574,3 +798,111 @@ components:
           type: string
       required:
         - error
+
+    SavedSearch:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: ["string", "null"]
+        query:
+          type: string
+        parsedFilters:
+          $ref: "#/components/schemas/ParsedFilters"
+        alertEnabled:
+          type: boolean
+        lastRunAt:
+          type: ["string", "null"]
+          format: date-time
+        lastResultCount:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - query
+        - alertEnabled
+        - createdAt
+        - updatedAt
+
+    SavedSearchInput:
+      type: object
+      properties:
+        query:
+          type: string
+        name:
+          type: ["string", "null"]
+        parsedFilters:
+          $ref: "#/components/schemas/ParsedFilters"
+        alertEnabled:
+          type: boolean
+      required:
+        - query
+
+    VisitedProperty:
+      type: object
+      properties:
+        id:
+          type: integer
+        propertyData:
+          $ref: "#/components/schemas/Property"
+        visitCount:
+          type: integer
+        firstVisitedAt:
+          type: string
+          format: date-time
+        lastVisitedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - propertyData
+        - visitCount
+        - firstVisitedAt
+        - lastVisitedAt
+
+    VisitedPropertyInput:
+      type: object
+      properties:
+        propertyData:
+          $ref: "#/components/schemas/Property"
+      required:
+        - propertyData
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: ["string", "null"]
+        href:
+          type: ["string", "null"]
+        readAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - title
+        - createdAt
+
+    UnreadCount:
+      type: object
+      properties:
+        count:
+          type: integer
+      required:
+        - count

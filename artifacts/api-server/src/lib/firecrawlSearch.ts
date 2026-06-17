@@ -1,5 +1,6 @@
 import { logger } from "./logger";
 import type { ParsedFilters, PropertyResult } from "./propertySearch";
+import { hydrateGeocode, getGeocodeForId } from "./geocode";
 
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
@@ -51,6 +52,37 @@ const LISTING_SCHEMA = {
 const EXTRACT_PROMPT =
   "Extract every real estate property listing visible on this page. For each listing capture: the street address, city, province, postal code, the asking price in Canadian dollars as a plain number (no $ or commas), number of bedrooms, number of bathrooms, interior square footage as a number, the property type (house, condo, townhouse, etc.), the absolute URL of the main listing photo, and the absolute URL of the listing detail page. Only include genuine property listings, not ads or navigation.";
 
+// ---- single-listing detail extraction (for property detail pages) ----
+interface ExtractedDetail {
+  description?: string;
+  yearBuilt?: number;
+  bedrooms?: number;
+  bathrooms?: number;
+  sqft?: number;
+  propertyType?: string;
+  mlsId?: string;
+  daysOnMarket?: number;
+  photos?: string[];
+}
+
+const DETAIL_SCHEMA = {
+  type: "object",
+  properties: {
+    description: { type: "string" },
+    yearBuilt: { type: "number" },
+    bedrooms: { type: "number" },
+    bathrooms: { type: "number" },
+    sqft: { type: "number" },
+    propertyType: { type: "string" },
+    mlsId: { type: "string" },
+    daysOnMarket: { type: "number" },
+    photos: { type: "array", items: { type: "string" } },
+  },
+};
+
+const DETAIL_PROMPT =
+  "This is a single real estate listing detail page. Extract ONLY information that is actually shown on the page for THIS property: the full marketing description text; the year the home was built; number of bedrooms; number of bathrooms; interior square footage as a number; the property type; the MLS listing number; the number of days the property has been on the market as a plain number (only if explicitly shown); and the absolute URLs of every photo in the listing photo gallery. Do not guess, estimate, or fabricate any value. Completely omit any field that is not present on the page.";
+
 // ---- caching to conserve Firecrawl credits ----
 const scrapeCache = new Map<string, { listings: ExtractedListing[]; expires: number }>();
 const SCRAPE_TTL_MS = 30 * 60 * 1000; // 30 min
@@ -59,7 +91,15 @@ const SCRAPE_TTL_MS = 30 * 60 * 1000; // 30 min
 const propertyStore = new Map<string, PropertyResult>();
 
 export function getStoredProperty(id: string): PropertyResult | undefined {
-  return propertyStore.get(id);
+  const p = propertyStore.get(id);
+  if (!p) return undefined;
+  // Merge the freshest geocode state (the background queue may have resolved
+  // coordinates after this listing was first stored).
+  const geo = getGeocodeForId(id);
+  if (geo) {
+    return { ...p, lat: geo.lat, lng: geo.lng, geocodeStatus: geo.status };
+  }
+  return p;
 }
 
 function rememberProperties(props: PropertyResult[]): void {
@@ -120,6 +160,64 @@ async function firecrawlScrape(url: string): Promise<ExtractedListing[]> {
     logger.error({ err, url }, "Firecrawl scrape failed");
     return [];
   }
+}
+
+// Single-listing detail cache. We cache misses too (shorter TTL) so a transient
+// failure or a thin listing page doesn't get re-scraped on every detail view.
+const detailCache = new Map<string, { detail: ExtractedDetail | null; expires: number }>();
+const DETAIL_TTL_MS = 30 * 60 * 1000; // 30 min for a real hit
+const DETAIL_MISS_TTL_MS = 5 * 60 * 1000; // 5 min for an empty/failed scrape
+
+async function firecrawlScrapeDetail(url: string): Promise<ExtractedDetail | null> {
+  if (!FIRECRAWL_API_KEY) return null;
+
+  const cached = detailCache.get(url);
+  if (cached && cached.expires > Date.now()) {
+    logger.info({ url }, "Firecrawl detail cache hit");
+    return cached.detail;
+  }
+
+  let detail: ExtractedDetail | null = null;
+  try {
+    const res = await fetch(`${FIRECRAWL_BASE}/scrape`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
+      },
+      body: JSON.stringify({
+        url,
+        formats: ["json"],
+        onlyMainContent: false,
+        waitFor: 3000,
+        timeout: 55000,
+        proxy: "auto",
+        location: { country: "CA", languages: ["en-CA"] },
+        jsonOptions: { prompt: DETAIL_PROMPT, schema: DETAIL_SCHEMA },
+      }),
+      signal: AbortSignal.timeout(65000),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as { data?: { json?: ExtractedDetail } };
+      detail = data?.data?.json ?? null;
+      logger.info({ url }, "Firecrawl detail scrape complete");
+    } else {
+      const text = await res.text().catch(() => "");
+      logger.warn(
+        { status: res.status, url, body: text.slice(0, 300) },
+        "Firecrawl detail scrape returned non-200"
+      );
+    }
+  } catch (err) {
+    logger.error({ err, url }, "Firecrawl detail scrape failed");
+  }
+
+  detailCache.set(url, {
+    detail,
+    expires: Date.now() + (detail ? DETAIL_TTL_MS : DETAIL_MISS_TTL_MS),
+  });
+  return detail;
 }
 
 function citySlug(location: string): string {
@@ -320,6 +418,9 @@ export async function searchCanadianListings(
     const finalList = applyHardFilters(deduped, filters).slice(0, maxResults);
 
     if (finalList.length > 0) {
+      // Apply cached coordinates synchronously and enqueue the rest; never
+      // blocks on Nominatim (honest pins only — pending listings stay pin-less).
+      await hydrateGeocode(finalList);
       rememberProperties(finalList);
       logger.info({ url, returned: finalList.length }, "Live listings retrieved");
       return finalList;
@@ -353,4 +454,84 @@ export async function getFeaturedCanadianListings(count = 6): Promise<PropertyRe
     featuredCache = { props, expires: Date.now() + FEATURED_TTL_MS };
   }
   return props.slice(0, count);
+}
+
+function isAllowedListingHost(rawUrl: string): boolean {
+  let host: string;
+  try {
+    host = new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return ALLOWED_LISTING_HOSTS.some(
+    (h) => host === h || host === `www.${h}` || host.endsWith(`.${h}`)
+  );
+}
+
+/**
+ * Enrich a stored listing with REAL detail-page data scraped from its source
+ * listing URL. Only fields actually observed on the page are merged in — we
+ * never overwrite an existing real value with a guess and never fabricate a
+ * missing one. Missing fields stay null so the UI can say "Not available"
+ * honestly. The result is written back into the in-memory store. Returns true
+ * if enrichment actually ran (i.e. a scrape was attempted with a result).
+ */
+export async function enrichStoredProperty(id: string): Promise<boolean> {
+  const base = propertyStore.get(id);
+  if (!base || !base.listingUrl) return false;
+  if (!isAllowedListingHost(base.listingUrl)) return false;
+
+  const detail = await firecrawlScrapeDetail(base.listingUrl);
+  if (!detail) return false;
+
+  const merged: PropertyResult = { ...base };
+
+  if (typeof detail.description === "string" && detail.description.trim()) {
+    merged.description = detail.description.trim();
+  }
+
+  const currentYear = new Date().getFullYear();
+  if (
+    typeof detail.yearBuilt === "number" &&
+    detail.yearBuilt > 1700 &&
+    detail.yearBuilt <= currentYear
+  ) {
+    merged.yearBuilt = Math.round(detail.yearBuilt);
+  }
+
+  // Only fill structural facts when the search card didn't already have them.
+  if (merged.bedrooms == null && typeof detail.bedrooms === "number") {
+    merged.bedrooms = detail.bedrooms;
+  }
+  if (merged.bathrooms == null && typeof detail.bathrooms === "number") {
+    merged.bathrooms = detail.bathrooms;
+  }
+  if (merged.sqft == null && typeof detail.sqft === "number" && detail.sqft > 0) {
+    merged.sqft = Math.round(detail.sqft);
+  }
+
+  if (typeof detail.mlsId === "string" && detail.mlsId.trim()) {
+    merged.mlsId = detail.mlsId.trim();
+  }
+  if (typeof detail.daysOnMarket === "number" && detail.daysOnMarket >= 0) {
+    merged.daysOnMarket = Math.round(detail.daysOnMarket);
+  }
+
+  if (Array.isArray(detail.photos) && detail.photos.length > 0) {
+    const cleaned = detail.photos
+      .map((p) => (p ?? "").trim())
+      .filter(Boolean)
+      .map((p) => (p.startsWith("//") ? "https:" + p : p))
+      .filter((p) => p.startsWith("http"));
+    const combined = Array.from(new Set([...merged.photos, ...cleaned]));
+    if (combined.length > 0) merged.photos = combined;
+  }
+
+  // Recompute price-per-sqft only if we just learned the square footage.
+  if (merged.pricePerSqft == null && merged.sqft && merged.price) {
+    merged.pricePerSqft = Math.round(merged.price / merged.sqft);
+  }
+
+  propertyStore.set(id, merged);
+  return true;
 }

@@ -1,1 +1,3 @@
-- [Firecrawl real-estate search](firecrawl-realtor-search.md) — how Nestly pulls REAL Canadian listings; managed externalApi callback is unusable, call api.firecrawl.dev directly from backend.
+- [Nestly map + geocoding](nestly-map-geocoding.md) — court-finder map view: clustering lib choice, keyless tiles, polling cap, and how "no fake pins" is enforced at the UI.
+- [Nestly auth decisions](nestly-auth-decisions.md) — Clerk cookie-auth, per-user favorites, JIT provisioning, CORS allowlist tradeoffs.
+- [Nestly data honesty](nestly-data-honesty.md) — derived metrics (pricePerSqft) must be labeled "calculated"; per-user collections store client snapshots by design (restart-survival); notif badge needs its own refetch.

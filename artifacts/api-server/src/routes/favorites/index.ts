@@ -1,14 +1,17 @@
 import { Router, type IRouter } from "express";
 import { AddFavoriteBody, RemoveFavoriteParams } from "@workspace/api-zod";
 import { db, favoritesTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
+import { requireAuth } from "../../middlewares/auth";
 
 const router: IRouter = Router();
 
-router.get("/favorites", async (_req, res): Promise<void> => {
+router.get("/favorites", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const favorites = await db
     .select()
     .from(favoritesTable)
+    .where(eq(favoritesTable.userId, userId))
     .orderBy(desc(favoritesTable.createdAt));
 
   res.json(
@@ -16,11 +19,12 @@ router.get("/favorites", async (_req, res): Promise<void> => {
       id: f.id,
       propertyData: f.propertyData,
       createdAt: f.createdAt.toISOString(),
-    }))
+    })),
   );
 });
 
-router.post("/favorites", async (req, res): Promise<void> => {
+router.post("/favorites", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const parsed = AddFavoriteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -29,7 +33,7 @@ router.post("/favorites", async (req, res): Promise<void> => {
 
   const [inserted] = await db
     .insert(favoritesTable)
-    .values({ propertyData: parsed.data.propertyData })
+    .values({ userId, propertyData: parsed.data.propertyData })
     .returning();
 
   res.status(201).json({
@@ -39,7 +43,8 @@ router.post("/favorites", async (req, res): Promise<void> => {
   });
 });
 
-router.delete("/favorites/:id", async (req, res): Promise<void> => {
+router.delete("/favorites/:id", requireAuth, async (req, res): Promise<void> => {
+  const userId = req.userId!;
   const params = RemoveFavoriteParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid ID" });
@@ -48,7 +53,9 @@ router.delete("/favorites/:id", async (req, res): Promise<void> => {
 
   const [deleted] = await db
     .delete(favoritesTable)
-    .where(eq(favoritesTable.id, params.data.id))
+    .where(
+      and(eq(favoritesTable.id, params.data.id), eq(favoritesTable.userId, userId)),
+    )
     .returning();
 
   if (!deleted) {

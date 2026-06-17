@@ -24,15 +24,33 @@ Nestly is a luxury, AI-powered real estate search experience for the Canadian ma
 - API codegen: Orval (from OpenAPI spec)
 - Live data: Firecrawl (`api.firecrawl.dev`) scraping Realtor.ca / Zolo.ca
 - AI: OpenAI via Replit AI Integrations (prompt parsing, search summaries)
+- Maps: Leaflet + react-leaflet v5 (CARTO dark tiles), `supercluster` clustering; OpenStreetMap Nominatim geocoding with a persisted `geocode_cache` table
 
 ## Where things live
 
 - `artifacts/api-server/src/lib/firecrawlSearch.ts` — **real data engine.** Scrapes Realtor.ca then Zolo.ca via Firecrawl, with caching + in-memory property store. Exports `searchCanadianListings`, `getFeaturedCanadianListings`, `getStoredProperty`, `hasFirecrawl`.
 - `artifacts/api-server/src/lib/propertySearch.ts` — AI helpers only: `parsePromptToFilters`, `generateSearchSummary`, `scoreProperties` (+ `ParsedFilters`/`PropertyResult` types).
-- `artifacts/api-server/src/routes/properties/index.ts` — search / featured / detail routes, all wired to real data.
+- `artifacts/api-server/src/lib/geocode.ts` — Nominatim geocoding engine; resolves listing addresses to lat/lng, persists terminal `ok`/`failed` to `geocode_cache`, queues misses without blocking listing retrieval. Never guesses a pin.
+- `artifacts/api-server/src/routes/properties/index.ts` — search / featured / detail routes plus `POST /properties/geocode-status` (polled for `pending` listings), all wired to real data. Detail (`GET /properties/:id`) does a per-listing Firecrawl scrape (cached) and merges only observed fields — missing fields stay null (honest "Not available"). `pricePerSqft` is **derived** (`price/sqft`), never source-extracted — see `.agents/memory/nestly-data-honesty.md`.
+- `artifacts/api-server/src/routes/{saved-searches,visited-properties,notifications}/index.ts` — P2 auth-scoped routes mirroring favorites (`requireAuth` → `req.userId`, ownership via `and(eq(id),eq(userId))`). Visited/favorites persist the client `propertyData` snapshot by design (survives the in-memory store's restarts).
 - `artifacts/api-server/src/routes/openai/index.ts` — conversational AI endpoints.
+- `artifacts/home-search/src/pages/Search.tsx` — map-first Search shell: `?view=map|list` toggle, live counters, drawer, honest pending/failed badges.
+- `artifacts/home-search/src/components/PropertyMap.tsx` — Leaflet/CARTO dark map, supercluster clusters, gold price-pill + cyan cluster `divIcon` markers (only `geocodeStatus==='ok'` listings get pins).
+- `artifacts/home-search/src/hooks/useGeocodePolling.ts` — polls geocode-status ~2.5s with a hard cap; merges only server-confirmed coords.
+- `artifacts/home-search/src/lib/format.ts` — shared CAD `formatPrice` / `priceLabel`.
+- `artifacts/home-search/src/pages/PropertyDetails.tsx` — photo carousel + thumbnail gallery + lightbox (Esc/arrows), honest `StatRow` fields ("Not available" for null), favorite/share, records a visit once after authed load, and an honest "View on {source}" link (no fake "Contact Agent").
+- `artifacts/home-search/src/components/NotificationBell.tsx` — header bell + unread badge (60s refetch), dropdown with mark-one/mark-all (refetches list **and** unread-count), honest empty state; hidden when signed out.
+- `artifacts/home-search/src/components/SavedSearches.tsx` — save/list/run/delete the current query (chips); signed-in only; shown on Search in both map+list views.
+- `artifacts/home-search/src/pages/Visited.tsx` — "Recently Viewed" page (mirrors Favorites, `visitCount` badge, signed-out prompt).
 - `artifacts/home-search/src/App.tsx` — frontend routes (supports `?skip` to bypass the 3D intro).
 - `lib/api-spec/openapi.yaml` — API contract (source of truth for generated hooks/schemas).
+
+## Auth
+
+- **Replit-managed Clerk** (white-label, cookie auth on web — no Bearer tokens). Browsing is fully public; sign-in is required only for per-user features: favorites, saved searches, visited history, and notifications (and, in later phases, message/sell/use FindIT).
+- Server derives identity via `getAuth(req).userId` in `requireAuth` (`artifacts/api-server/src/middlewares/auth.ts`) — never from the request body/query. A `users` table is provisioned just-in-time from the Clerk profile.
+- Favorites are per-user with server-side ownership checks. CORS uses a same-origin allowlist (built from `REPLIT_DOMAINS`/`REPLIT_DEV_DOMAIN`), never reflect-all, because auth is cookie-based.
+- See `.agents/memory/nestly-auth-decisions.md` for the non-obvious tradeoffs (favorites snapshot vs. hydrate-by-id, JIT provisioning, CORS).
 
 ## Architecture decisions
 
@@ -44,10 +62,12 @@ Nestly is a luxury, AI-powered real estate search experience for the Canadian ma
 ## Product
 
 - Natural-language home search ("4-bed house in Scarborough under $1M") → AI extracts filters → real Realtor.ca listings, scored and summarized.
+- Court-finder-style map-first Search: full-bleed dark map with real listings as pins, map↔list toggle, animated live counters, glass panels, bottom AI search bar, and an animated property drawer. Listings that can't be geocoded show "Location pending" / "Map pin unavailable" badges — never a fake pin.
 - Home page with cinematic 3D intro and curated "Featured Residences" (real live listings).
-- Property detail pages with photos, price-per-sqft, days on market, and a link to the source listing.
+- Property detail pages with a photo carousel + lightbox, real source fields (year built, MLS#, days on market, calculated price/sqft), honest "Not available" for anything the source didn't provide, favorite/share, and a "View on {source}" link to the live listing.
+- Per-user (signed-in): favorites, saved searches (save/re-run a query), recently-viewed history, and an in-app notification bell shell.
 - Favorites and Market pages.
-- Deep-black + warm-gold luxury theme, premium motion.
+- Deep-black + warm-gold luxury theme with a cyan/electric accent (`--accent2`), premium motion.
 
 ## User preferences
 
@@ -60,6 +80,7 @@ Nestly is a luxury, AI-powered real estate search experience for the Canadian ma
 - A cold search hits Firecrawl and can take ~20-60s; repeat searches are fast (cached). Don't mistake the loading state for a hang.
 - Realtor.ca/Zolo.ca require `location: { country: "CA" }` and `proxy: "auto"` in the Firecrawl call, plus a city→province map for Realtor.ca URLs.
 - Direct server `fetch` of Zillow/Realtor.ca returns 403 — must go through Firecrawl.
+- Geocoding genuinely fails for unit-prefixed addresses (e.g. "1007 - 120 VARNA DRIVE") Nominatim can't resolve to street level — that's expected and shown honestly, never a guessed pin. See `.agents/memory/nestly-map-geocoding.md`.
 
 ## Pointers
 

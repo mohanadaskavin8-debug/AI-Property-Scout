@@ -1,0 +1,13 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="nestlyGold" x1="20" y1="16" x2="76" y2="84" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0D596"/>
+      <stop offset="0.55" stop-color="#D4AF6A"/>
+      <stop offset="1" stop-color="#B8893B"/>
+    </linearGradient>
+  </defs>
+  <rect width="96" height="96" rx="24" fill="#0A0A0D"/>
+  <rect x="1.25" y="1.25" width="93.5" height="93.5" rx="22.75" fill="none" stroke="url(#nestlyGold)" stroke-opacity="0.45" stroke-width="1.5"/>
+  <path d="M48 23 L73 44 V71 H23 V44 Z" fill="none" stroke="url(#nestlyGold)" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M41 71 V53 H55 V71" fill="none" stroke="url(#nestlyGold)" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

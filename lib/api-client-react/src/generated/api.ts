@@ -23,9 +23,12 @@ import type {
   ApiError,
   FavoriteInput,
   FavoriteProperty,
+  GeocodeStatusEntry,
+  GeocodeStatusInput,
   GetMarketInsightsParams,
   HealthStatus,
   MarketInsights,
+  Notification,
   OpenaiConversation,
   OpenaiConversationInput,
   OpenaiConversationWithMessages,
@@ -35,7 +38,12 @@ import type {
   Property,
   PropertySearchInput,
   PropertySearchResult,
-  TrendingSearch
+  SavedSearch,
+  SavedSearchInput,
+  TrendingSearch,
+  UnreadCount,
+  VisitedProperty,
+  VisitedPropertyInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -352,6 +360,77 @@ export function useGetTrendingSearches<TData = Awaited<ReturnType<typeof getTren
 
 
 
+
+export const getGetGeocodeStatusUrl = () => {
+
+
+
+
+  return `/api/properties/geocode-status`
+}
+
+/**
+ * @summary Resolve geocode coordinates/status for property IDs (polled by the map)
+ */
+export const getGeocodeStatus = async (geocodeStatusInput: GeocodeStatusInput, options?: RequestInit): Promise<GeocodeStatusEntry[]> => {
+
+  return customFetch<GeocodeStatusEntry[]>(getGetGeocodeStatusUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      geocodeStatusInput,)
+  }
+);}
+
+
+
+
+export const getGetGeocodeStatusMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getGeocodeStatus>>, TError,{data: BodyType<GeocodeStatusInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof getGeocodeStatus>>, TError,{data: BodyType<GeocodeStatusInput>}, TContext> => {
+
+const mutationKey = ['getGeocodeStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof getGeocodeStatus>>, {data: BodyType<GeocodeStatusInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  getGeocodeStatus(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GetGeocodeStatusMutationResult = NonNullable<Awaited<ReturnType<typeof getGeocodeStatus>>>
+    export type GetGeocodeStatusMutationBody = BodyType<GeocodeStatusInput>
+    export type GetGeocodeStatusMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Resolve geocode coordinates/status for property IDs (polled by the map)
+ */
+export const useGetGeocodeStatus = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof getGeocodeStatus>>, TError,{data: BodyType<GeocodeStatusInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof getGeocodeStatus>>,
+        TError,
+        {data: BodyType<GeocodeStatusInput>},
+        TContext
+      > => {
+      return useMutation(getGetGeocodeStatusMutationOptions(options));
+    }
 
 export const getGetPropertyUrl = (id: string,) => {
 
@@ -1174,5 +1253,735 @@ export const useSendOpenaiMessage = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSendOpenaiMessageMutationOptions(options));
+    }
+
+export const getListSavedSearchesUrl = () => {
+
+
+
+
+  return `/api/saved-searches`
+}
+
+/**
+ * @summary List the authenticated user's saved searches
+ */
+export const listSavedSearches = async ( options?: RequestInit): Promise<SavedSearch[]> => {
+
+  return customFetch<SavedSearch[]>(getListSavedSearchesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSavedSearchesQueryKey = () => {
+    return [
+    `/api/saved-searches`
+    ] as const;
+    }
+
+
+export const getListSavedSearchesQueryOptions = <TData = Awaited<ReturnType<typeof listSavedSearches>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedSearches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSavedSearchesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSavedSearches>>> = ({ signal }) => listSavedSearches({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSavedSearches>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSavedSearchesQueryResult = NonNullable<Awaited<ReturnType<typeof listSavedSearches>>>
+export type ListSavedSearchesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the authenticated user's saved searches
+ */
+
+export function useListSavedSearches<TData = Awaited<ReturnType<typeof listSavedSearches>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedSearches>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSavedSearchesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateSavedSearchUrl = () => {
+
+
+
+
+  return `/api/saved-searches`
+}
+
+/**
+ * @summary Save a search for the authenticated user
+ */
+export const createSavedSearch = async (savedSearchInput: SavedSearchInput, options?: RequestInit): Promise<SavedSearch> => {
+
+  return customFetch<SavedSearch>(getCreateSavedSearchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      savedSearchInput,)
+  }
+);}
+
+
+
+
+export const getCreateSavedSearchMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSavedSearch>>, TError,{data: BodyType<SavedSearchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSavedSearch>>, TError,{data: BodyType<SavedSearchInput>}, TContext> => {
+
+const mutationKey = ['createSavedSearch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSavedSearch>>, {data: BodyType<SavedSearchInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSavedSearch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSavedSearchMutationResult = NonNullable<Awaited<ReturnType<typeof createSavedSearch>>>
+    export type CreateSavedSearchMutationBody = BodyType<SavedSearchInput>
+    export type CreateSavedSearchMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Save a search for the authenticated user
+ */
+export const useCreateSavedSearch = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSavedSearch>>, TError,{data: BodyType<SavedSearchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSavedSearch>>,
+        TError,
+        {data: BodyType<SavedSearchInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSavedSearchMutationOptions(options));
+    }
+
+export const getDeleteSavedSearchUrl = (id: number,) => {
+
+
+
+
+  return `/api/saved-searches/${id}`
+}
+
+/**
+ * @summary Delete a saved search
+ */
+export const deleteSavedSearch = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteSavedSearchUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteSavedSearchMutationOptions = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSavedSearch>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSavedSearch>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteSavedSearch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSavedSearch>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteSavedSearch(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSavedSearchMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSavedSearch>>>
+
+    export type DeleteSavedSearchMutationError = ErrorType<ApiError>
+
+    /**
+ * @summary Delete a saved search
+ */
+export const useDeleteSavedSearch = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSavedSearch>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSavedSearch>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteSavedSearchMutationOptions(options));
+    }
+
+export const getRunSavedSearchUrl = (id: number,) => {
+
+
+
+
+  return `/api/saved-searches/${id}/run`
+}
+
+/**
+ * @summary Re-run a saved search and return fresh real listings
+ */
+export const runSavedSearch = async (id: number, options?: RequestInit): Promise<PropertySearchResult> => {
+
+  return customFetch<PropertySearchResult>(getRunSavedSearchUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRunSavedSearchMutationOptions = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runSavedSearch>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runSavedSearch>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['runSavedSearch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runSavedSearch>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  runSavedSearch(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunSavedSearchMutationResult = NonNullable<Awaited<ReturnType<typeof runSavedSearch>>>
+
+    export type RunSavedSearchMutationError = ErrorType<ApiError>
+
+    /**
+ * @summary Re-run a saved search and return fresh real listings
+ */
+export const useRunSavedSearch = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runSavedSearch>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runSavedSearch>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRunSavedSearchMutationOptions(options));
+    }
+
+export const getListVisitedPropertiesUrl = () => {
+
+
+
+
+  return `/api/visited-properties`
+}
+
+/**
+ * @summary List properties the authenticated user has viewed
+ */
+export const listVisitedProperties = async ( options?: RequestInit): Promise<VisitedProperty[]> => {
+
+  return customFetch<VisitedProperty[]>(getListVisitedPropertiesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListVisitedPropertiesQueryKey = () => {
+    return [
+    `/api/visited-properties`
+    ] as const;
+    }
+
+
+export const getListVisitedPropertiesQueryOptions = <TData = Awaited<ReturnType<typeof listVisitedProperties>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listVisitedProperties>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListVisitedPropertiesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listVisitedProperties>>> = ({ signal }) => listVisitedProperties({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listVisitedProperties>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListVisitedPropertiesQueryResult = NonNullable<Awaited<ReturnType<typeof listVisitedProperties>>>
+export type ListVisitedPropertiesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List properties the authenticated user has viewed
+ */
+
+export function useListVisitedProperties<TData = Awaited<ReturnType<typeof listVisitedProperties>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listVisitedProperties>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListVisitedPropertiesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getRecordVisitedPropertyUrl = () => {
+
+
+
+
+  return `/api/visited-properties`
+}
+
+/**
+ * @summary Record that the authenticated user viewed a property
+ */
+export const recordVisitedProperty = async (visitedPropertyInput: VisitedPropertyInput, options?: RequestInit): Promise<VisitedProperty> => {
+
+  return customFetch<VisitedProperty>(getRecordVisitedPropertyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      visitedPropertyInput,)
+  }
+);}
+
+
+
+
+export const getRecordVisitedPropertyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordVisitedProperty>>, TError,{data: BodyType<VisitedPropertyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordVisitedProperty>>, TError,{data: BodyType<VisitedPropertyInput>}, TContext> => {
+
+const mutationKey = ['recordVisitedProperty'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordVisitedProperty>>, {data: BodyType<VisitedPropertyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  recordVisitedProperty(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordVisitedPropertyMutationResult = NonNullable<Awaited<ReturnType<typeof recordVisitedProperty>>>
+    export type RecordVisitedPropertyMutationBody = BodyType<VisitedPropertyInput>
+    export type RecordVisitedPropertyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Record that the authenticated user viewed a property
+ */
+export const useRecordVisitedProperty = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordVisitedProperty>>, TError,{data: BodyType<VisitedPropertyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordVisitedProperty>>,
+        TError,
+        {data: BodyType<VisitedPropertyInput>},
+        TContext
+      > => {
+      return useMutation(getRecordVisitedPropertyMutationOptions(options));
+    }
+
+export const getListNotificationsUrl = () => {
+
+
+
+
+  return `/api/notifications`
+}
+
+/**
+ * @summary List the authenticated user's notifications
+ */
+export const listNotifications = async ( options?: RequestInit): Promise<Notification[]> => {
+
+  return customFetch<Notification[]>(getListNotificationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNotificationsQueryKey = () => {
+    return [
+    `/api/notifications`
+    ] as const;
+    }
+
+
+export const getListNotificationsQueryOptions = <TData = Awaited<ReturnType<typeof listNotifications>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNotificationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNotifications>>> = ({ signal }) => listNotifications({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNotificationsQueryResult = NonNullable<Awaited<ReturnType<typeof listNotifications>>>
+export type ListNotificationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the authenticated user's notifications
+ */
+
+export function useListNotifications<TData = Awaited<ReturnType<typeof listNotifications>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNotificationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getGetUnreadNotificationCountUrl = () => {
+
+
+
+
+  return `/api/notifications/unread-count`
+}
+
+/**
+ * @summary Count unread notifications for the authenticated user
+ */
+export const getUnreadNotificationCount = async ( options?: RequestInit): Promise<UnreadCount> => {
+
+  return customFetch<UnreadCount>(getGetUnreadNotificationCountUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUnreadNotificationCountQueryKey = () => {
+    return [
+    `/api/notifications/unread-count`
+    ] as const;
+    }
+
+
+export const getGetUnreadNotificationCountQueryOptions = <TData = Awaited<ReturnType<typeof getUnreadNotificationCount>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUnreadNotificationCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUnreadNotificationCountQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUnreadNotificationCount>>> = ({ signal }) => getUnreadNotificationCount({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUnreadNotificationCount>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUnreadNotificationCountQueryResult = NonNullable<Awaited<ReturnType<typeof getUnreadNotificationCount>>>
+export type GetUnreadNotificationCountQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Count unread notifications for the authenticated user
+ */
+
+export function useGetUnreadNotificationCount<TData = Awaited<ReturnType<typeof getUnreadNotificationCount>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUnreadNotificationCount>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUnreadNotificationCountQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getMarkAllNotificationsReadUrl = () => {
+
+
+
+
+  return `/api/notifications/read-all`
+}
+
+/**
+ * @summary Mark all notifications as read
+ */
+export const markAllNotificationsRead = async ( options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getMarkAllNotificationsReadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getMarkAllNotificationsReadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext> => {
+
+const mutationKey = ['markAllNotificationsRead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markAllNotificationsRead>>, void> = () => {
+
+
+          return  markAllNotificationsRead(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkAllNotificationsReadMutationResult = NonNullable<Awaited<ReturnType<typeof markAllNotificationsRead>>>
+
+    export type MarkAllNotificationsReadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark all notifications as read
+ */
+export const useMarkAllNotificationsRead = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markAllNotificationsRead>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markAllNotificationsRead>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getMarkAllNotificationsReadMutationOptions(options));
+    }
+
+export const getMarkNotificationReadUrl = (id: number,) => {
+
+
+
+
+  return `/api/notifications/${id}/read`
+}
+
+/**
+ * @summary Mark a single notification as read
+ */
+export const markNotificationRead = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getMarkNotificationReadUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getMarkNotificationReadMutationOptions = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['markNotificationRead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markNotificationRead>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  markNotificationRead(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkNotificationReadMutationResult = NonNullable<Awaited<ReturnType<typeof markNotificationRead>>>
+
+    export type MarkNotificationReadMutationError = ErrorType<ApiError>
+
+    /**
+ * @summary Mark a single notification as read
+ */
+export const useMarkNotificationRead = <TError = ErrorType<ApiError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markNotificationRead>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markNotificationRead>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getMarkNotificationReadMutationOptions(options));
     }
 
