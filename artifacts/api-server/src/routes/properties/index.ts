@@ -5,11 +5,15 @@ import {
 } from "@workspace/api-zod";
 import {
   parsePromptToFilters,
-  searchZillow,
   scoreProperties,
   generateSearchSummary,
-  getSampleProperties,
 } from "../../lib/propertySearch";
+import {
+  searchCanadianListings,
+  getFeaturedCanadianListings,
+  getStoredProperty,
+  hasFirecrawl,
+} from "../../lib/firecrawlSearch";
 import { db } from "@workspace/db";
 import { searchesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
@@ -32,30 +36,46 @@ router.post("/properties/search", async (req, res): Promise<void> => {
   req.log.info({ filters }, "Parsed search filters");
 
   const resultCount = maxResults ?? 20;
-  let properties = await searchZillow(filters, resultCount);
-
-  if (properties.length === 0) {
-    req.log.info("No Zillow results, using sample data");
-    properties = getSampleProperties(filters.location ?? "New York", resultCount);
-  }
+  const properties = await searchCanadianListings(filters, resultCount);
 
   const scored = scoreProperties(properties, filters);
-  const summary = await generateSearchSummary(prompt, filters, scored.length);
 
-  const location = filters.location ?? prompt.slice(0, 100);
-  const existing = await db
-    .select()
-    .from(searchesTable)
-    .where(eq(searchesTable.query, prompt))
-    .limit(1);
-
-  if (existing.length > 0) {
-    await db
-      .update(searchesTable)
-      .set({ count: (existing[0].count ?? 0) + 1 })
-      .where(eq(searchesTable.id, existing[0].id));
+  let summary: string;
+  if (scored.length > 0) {
+    // The AI summary is a nicety — never let it discard real listings.
+    try {
+      summary = await generateSearchSummary(prompt, filters, scored.length);
+    } catch (err) {
+      req.log.warn({ err }, "Search summary generation failed; using fallback");
+      summary = `Found ${scored.length} live listings matching "${filters.location ?? prompt}".`;
+    }
+  } else if (!hasFirecrawl()) {
+    summary =
+      "Live listings are unavailable because the data provider isn't configured. Please add a Firecrawl API key.";
   } else {
-    await db.insert(searchesTable).values({ query: prompt, location, count: 1 });
+    summary = `We couldn't find live listings for "${filters.location ?? prompt}" right now. Try a major Canadian city (e.g. Toronto, Vancouver, Calgary) or broaden your criteria.`;
+  }
+
+  // Persisting the search for "trending" is a side effect — failure here must
+  // not turn a successful real-listing search into a 500.
+  try {
+    const location = filters.location ?? prompt.slice(0, 100);
+    const existing = await db
+      .select()
+      .from(searchesTable)
+      .where(eq(searchesTable.query, prompt))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(searchesTable)
+        .set({ count: (existing[0].count ?? 0) + 1 })
+        .where(eq(searchesTable.id, existing[0].id));
+    } else {
+      await db.insert(searchesTable).values({ query: prompt, location, count: 1 });
+    }
+  } catch (err) {
+    req.log.warn({ err }, "Failed to persist search history; continuing");
   }
 
   res.json({
@@ -66,11 +86,12 @@ router.post("/properties/search", async (req, res): Promise<void> => {
   });
 });
 
-router.get("/properties/featured", async (_req, res): Promise<void> => {
-  const featured = getSampleProperties("San Francisco", 6).map((p) => ({
+router.get("/properties/featured", async (req, res): Promise<void> => {
+  const featured = (await getFeaturedCanadianListings(6)).map((p, i) => ({
     ...p,
-    matchScore: 95 + Math.floor(Math.random() * 5),
+    matchScore: 99 - i,
   }));
+  req.log.info({ count: featured.length }, "Featured listings served");
   res.json(featured);
 });
 
@@ -82,12 +103,12 @@ router.get("/properties/trending", async (_req, res): Promise<void> => {
     .limit(8);
 
   const fallback = [
-    { query: "Modern house with pool in Miami", count: 142, location: "Miami, FL" },
-    { query: "2BR condo downtown NYC under $1.5M", count: 98, location: "New York, NY" },
-    { query: "4BR house good schools Austin TX", count: 87, location: "Austin, TX" },
-    { query: "Beachfront property Florida", count: 76, location: "Florida" },
-    { query: "Modern loft Seattle under $800K", count: 65, location: "Seattle, WA" },
-    { query: "Mountain view house Denver", count: 54, location: "Denver, CO" },
+    { query: "Detached house in Toronto under $1.2M", count: 142, location: "Toronto, ON" },
+    { query: "2BR condo downtown Vancouver", count: 98, location: "Vancouver, BC" },
+    { query: "4BR house with good schools in Mississauga", count: 87, location: "Mississauga, ON" },
+    { query: "Modern condo in Calgary under $600K", count: 76, location: "Calgary, AB" },
+    { query: "Townhouse in Ottawa near transit", count: 65, location: "Ottawa, ON" },
+    { query: "Family home in Burnaby with a yard", count: 54, location: "Burnaby, BC" },
   ];
 
   const results =
@@ -107,14 +128,10 @@ router.get("/properties/:id", async (req, res): Promise<void> => {
 
   const { id } = params.data;
 
-  if (id.startsWith("sample-") || id.startsWith("zillow-")) {
-    const index = parseInt(id.split("-")[1], 10);
-    const properties = getSampleProperties("San Francisco", 20);
-    const property = properties[index % properties.length];
-    if (property) {
-      res.json({ ...property, id });
-      return;
-    }
+  const property = getStoredProperty(id);
+  if (property) {
+    res.json(property);
+    return;
   }
 
   res.status(404).json({ error: "Property not found" });

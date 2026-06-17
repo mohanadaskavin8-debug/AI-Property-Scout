@@ -1,0 +1,1 @@
+- [Firecrawl real-estate search](firecrawl-realtor-search.md) — how Nestly pulls REAL Canadian listings; managed externalApi callback is unusable, call api.firecrawl.dev directly from backend.
