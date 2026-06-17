@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Nestly — AI Home Search"
+version = "1.0.0"
+id = "artifacts/home-search"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25947
+
+[services.development]
+run = "pnpm --filter @workspace/home-search run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/home-search", "run", "build" ]
+publicDir = "artifacts/home-search/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25947"
+BASE_PATH = "/"

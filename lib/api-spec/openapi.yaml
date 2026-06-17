@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Nestly AI Home Search API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: properties
+    description: Property search and management
+  - name: favorites
+    description: Saved favorite properties
+  - name: market
+    description: Market insights and statistics
+  - name: openai
+    description: OpenAI AI chat operations
 paths:
   /healthz:
     get:
@@ -24,6 +32,271 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /properties/search:
+    post:
+      operationId: searchProperties
+      tags: [properties]
+      summary: AI-powered property search from natural language prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PropertySearchInput"
+      responses:
+        "200":
+          description: Search results with matched properties
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PropertySearchResult"
+
+  /properties/featured:
+    get:
+      operationId: getFeaturedProperties
+      tags: [properties]
+      summary: Get featured premium listings
+      responses:
+        "200":
+          description: List of featured properties
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Property"
+
+  /properties/trending:
+    get:
+      operationId: getTrendingSearches
+      tags: [properties]
+      summary: Get trending search queries
+      responses:
+        "200":
+          description: List of trending searches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrendingSearch"
+
+  /properties/{id}:
+    get:
+      operationId: getProperty
+      tags: [properties]
+      summary: Get a property by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Property details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Property"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /favorites:
+    get:
+      operationId: listFavorites
+      tags: [favorites]
+      summary: List all saved favorite properties
+      responses:
+        "200":
+          description: List of favorites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FavoriteProperty"
+    post:
+      operationId: addFavorite
+      tags: [favorites]
+      summary: Save a property to favorites
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FavoriteInput"
+      responses:
+        "201":
+          description: Created favorite
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FavoriteProperty"
+
+  /favorites/{id}:
+    delete:
+      operationId: removeFavorite
+      tags: [favorites]
+      summary: Remove a property from favorites
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Removed
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /market/insights:
+    get:
+      operationId: getMarketInsights
+      tags: [market]
+      summary: Get real estate market insights and statistics
+      parameters:
+        - name: location
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Market insights
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketInsights"
+
+  /openai/conversations:
+    get:
+      operationId: listOpenaiConversations
+      tags: [openai]
+      summary: List all conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenaiConversation"
+    post:
+      operationId: createOpenaiConversation
+      tags: [openai]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenaiConversationInput"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiConversation"
+
+  /openai/conversations/{id}:
+    get:
+      operationId: getOpenaiConversation
+      tags: [openai]
+      summary: Get conversation with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiConversationWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiError"
+    delete:
+      operationId: deleteOpenaiConversation
+      tags: [openai]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiError"
+
+  /openai/conversations/{id}/messages:
+    get:
+      operationId: listOpenaiMessages
+      tags: [openai]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenaiMessage"
+    post:
+      operationId: sendOpenaiMessage
+      tags: [openai]
+      summary: Send a text message and receive a streaming text response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenaiMessageInput"
+      responses:
+        "200":
+          description: SSE stream of assistant text chunks
+          content:
+            text/event-stream: {}
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +307,270 @@ components:
       required:
         - status
 
+    Property:
+      type: object
+      properties:
+        id:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        zipCode:
+          type: string
+        price:
+          type: number
+        bedrooms:
+          type: ["integer", "null"]
+        bathrooms:
+          type: ["number", "null"]
+        sqft:
+          type: ["integer", "null"]
+        propertyType:
+          type: string
+        yearBuilt:
+          type: ["integer", "null"]
+        description:
+          type: ["string", "null"]
+        photos:
+          type: array
+          items:
+            type: string
+        lat:
+          type: ["number", "null"]
+        lng:
+          type: ["number", "null"]
+        mlsId:
+          type: ["string", "null"]
+        listingUrl:
+          type: ["string", "null"]
+        daysOnMarket:
+          type: ["integer", "null"]
+        pricePerSqft:
+          type: ["number", "null"]
+        source:
+          type: string
+        matchScore:
+          type: ["number", "null"]
+      required:
+        - id
+        - address
+        - city
+        - state
+        - zipCode
+        - price
+        - propertyType
+        - photos
+        - source
+
+    PropertySearchInput:
+      type: object
+      properties:
+        prompt:
+          type: string
+        location:
+          type: ["string", "null"]
+        maxResults:
+          type: ["integer", "null"]
+      required:
+        - prompt
+
+    ParsedFilters:
+      type: object
+      properties:
+        location:
+          type: ["string", "null"]
+        minPrice:
+          type: ["number", "null"]
+        maxPrice:
+          type: ["number", "null"]
+        minBedrooms:
+          type: ["integer", "null"]
+        minBathrooms:
+          type: ["number", "null"]
+        propertyType:
+          type: ["string", "null"]
+        minSqft:
+          type: ["integer", "null"]
+        maxSqft:
+          type: ["integer", "null"]
+        keywords:
+          type: array
+          items:
+            type: string
+
+    PropertySearchResult:
+      type: object
+      properties:
+        properties:
+          type: array
+          items:
+            $ref: "#/components/schemas/Property"
+        totalCount:
+          type: integer
+        searchSummary:
+          type: string
+        parsedFilters:
+          $ref: "#/components/schemas/ParsedFilters"
+      required:
+        - properties
+        - totalCount
+        - searchSummary
+        - parsedFilters
+
+    FavoriteProperty:
+      type: object
+      properties:
+        id:
+          type: integer
+        propertyData:
+          $ref: "#/components/schemas/Property"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - propertyData
+        - createdAt
+
+    FavoriteInput:
+      type: object
+      properties:
+        propertyData:
+          $ref: "#/components/schemas/Property"
+      required:
+        - propertyData
+
+    TrendingSearch:
+      type: object
+      properties:
+        query:
+          type: string
+        count:
+          type: integer
+        location:
+          type: ["string", "null"]
+      required:
+        - query
+        - count
+
+    MarketInsights:
+      type: object
+      properties:
+        location:
+          type: string
+        averagePrice:
+          type: number
+        medianPrice:
+          type: number
+        activeListings:
+          type: integer
+        avgDaysOnMarket:
+          type: number
+        pricePerSqft:
+          type: number
+        priceChangePercent:
+          type: number
+        hotNeighborhoods:
+          type: array
+          items:
+            type: string
+      required:
+        - location
+        - averagePrice
+        - medianPrice
+        - activeListings
+        - avgDaysOnMarket
+        - pricePerSqft
+        - priceChangePercent
+        - hotNeighborhoods
+
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    OpenaiConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - createdAt
+
+    OpenaiMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - createdAt
+
+    OpenaiConversationInput:
+      type: object
+      properties:
+        title:
+          type: string
+      required:
+        - title
+
+    OpenaiMessageInput:
+      type: object
+      properties:
+        content:
+          type: string
+      required:
+        - content
+
+    OpenaiConversationWithMessages:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenaiMessage"
+      required:
+        - id
+        - title
+        - createdAt
+        - messages
+
+    OpenaiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
