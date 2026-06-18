@@ -8,15 +8,18 @@ import {
   parsePromptToFilters,
   scoreProperties,
   generateSearchSummary,
+  type ParsedFilters,
+  type QueryPlan,
 } from "../../lib/propertySearch";
 import {
   searchCanadianListings,
   getFeaturedCanadianListings,
   getStoredProperty,
   enrichStoredProperty,
+  placeFromCityMap,
   hasFirecrawl,
 } from "../../lib/firecrawlSearch";
-import { getGeocodeStatus } from "../../lib/geocode";
+import { getGeocodeStatus, resolvePlace, type ResolvedPlace } from "../../lib/geocode";
 import { db } from "@workspace/db";
 import { searchesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
@@ -35,34 +38,69 @@ router.post("/properties/search", async (req, res): Promise<void> => {
 
   req.log.info({ prompt }, "Property search started");
 
-  const filters = await parsePromptToFilters(prompt);
-  req.log.info({ filters }, "Parsed search filters");
+  const plan = await parsePromptToFilters(prompt);
+  req.log.info({ plan }, "Parsed search plan");
 
   const resultCount = maxResults ?? 20;
-  const properties = await searchCanadianListings(filters, resultCount);
 
-  const scored = scoreProperties(properties, filters);
+  // Resolve the place to a REAL Canadian area — the geographic source of truth.
+  // The LLM is NEVER trusted to pick the city. If the user named a place we
+  // can't pin, we honestly return nothing rather than guess a wrong city.
+  let place: ResolvedPlace | null = null;
+  let locationNote: string | null = null;
+
+  if (plan.location) {
+    place = (await resolvePlace(plan.location)) ?? placeFromCityMap(plan.location);
+    if (!place) {
+      req.log.info({ location: plan.location }, "Could not resolve requested place");
+      res.json({
+        properties: [],
+        totalCount: 0,
+        searchSummary: `We couldn't pinpoint "${plan.location}" in Canada. Try a city, neighbourhood, postal code (FSA), or a nearby landmark — or rephrase the location.`,
+        parsedFilters: toPublicFilters(plan, null),
+      });
+      return;
+    }
+  } else {
+    // No location given: default to Toronto, but DISCLOSE it (honest, not silent).
+    place = (await resolvePlace("Toronto, Ontario")) ?? placeFromCityMap("Toronto");
+    locationNote =
+      "Showing Toronto — add a city, neighbourhood, or landmark to focus your search.";
+  }
+
+  // Honest "near" disclosure: the user asked for "near X" but we could only
+  // resolve the surrounding area (not the exact point), so walking-distance
+  // proximity can't be applied — say so instead of implying it.
+  if (plan.isNear && plan.location && place && !place.precise) {
+    locationNote = `We couldn't pinpoint the exact spot near "${plan.location}", so we're showing listings across ${place.displayName}. Add a specific landmark, intersection, or postal code to narrow to walking distance.`;
+  }
+
+  const properties = place ? await searchCanadianListings(plan, place, resultCount) : [];
+  const scored = scoreProperties(properties, plan);
 
   let summary: string;
   if (scored.length > 0) {
     // The AI summary is a nicety — never let it discard real listings.
     try {
-      summary = await generateSearchSummary(prompt, filters, scored.length);
+      summary = await generateSearchSummary(prompt, toPublicFilters(plan, place), scored.length);
     } catch (err) {
       req.log.warn({ err }, "Search summary generation failed; using fallback");
-      summary = `Found ${scored.length} live listings matching "${filters.location ?? prompt}".`;
+      summary = `Found ${scored.length} live listings in ${place?.displayName ?? "Canada"}.`;
     }
+    if (locationNote) summary = `${locationNote} ${summary}`;
   } else if (!hasFirecrawl()) {
     summary =
       "Live listings are unavailable because the data provider isn't configured. Please add a Firecrawl API key.";
+  } else if (plan.isNear && place && place.precise) {
+    summary = `We couldn't find live listings within walking distance of ${place.displayName} that match your criteria right now. Try widening your budget or area, or drop "near" to search the surrounding neighbourhood.`;
   } else {
-    summary = `We couldn't find live listings for "${filters.location ?? prompt}" right now. Try a major Canadian city (e.g. Toronto, Vancouver, Calgary) or broaden your criteria.`;
+    summary = `We couldn't find live listings in ${place?.displayName ?? "that area"} right now. Try broadening your criteria or searching a nearby area.`;
   }
 
   // Persisting the search for "trending" is a side effect — failure here must
   // not turn a successful real-listing search into a 500.
   try {
-    const location = filters.location ?? prompt.slice(0, 100);
+    const location = place?.displayName ?? plan.location ?? prompt.slice(0, 100);
     const existing = await db
       .select()
       .from(searchesTable)
@@ -85,9 +123,24 @@ router.post("/properties/search", async (req, res): Promise<void> => {
     properties: scored,
     totalCount: scored.length,
     searchSummary: summary,
-    parsedFilters: filters,
+    parsedFilters: toPublicFilters(plan, place),
   });
 });
+
+/** Map the internal QueryPlan back to the public ParsedFilters response shape. */
+function toPublicFilters(plan: QueryPlan, place: ResolvedPlace | null): ParsedFilters {
+  return {
+    location: place?.displayName ?? plan.location,
+    minPrice: plan.minPrice,
+    maxPrice: plan.maxPrice,
+    minBedrooms: plan.minBedrooms,
+    minBathrooms: plan.minBathrooms,
+    propertyType: plan.propertyType,
+    minSqft: plan.minSqft,
+    maxSqft: plan.maxSqft,
+    keywords: plan.keywords,
+  };
+}
 
 router.get("/properties/featured", async (req, res): Promise<void> => {
   const featured = (await getFeaturedCanadianListings(6)).map((p, i) => ({

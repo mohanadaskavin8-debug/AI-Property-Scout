@@ -11,8 +11,14 @@ import {
   parsePromptToFilters,
   scoreProperties,
   generateSearchSummary,
+  type ParsedFilters,
 } from "../../lib/propertySearch";
-import { searchCanadianListings, hasFirecrawl } from "../../lib/firecrawlSearch";
+import {
+  searchCanadianListings,
+  placeFromCityMap,
+  hasFirecrawl,
+} from "../../lib/firecrawlSearch";
+import { resolvePlace, type ResolvedPlace } from "../../lib/geocode";
 
 const router: IRouter = Router();
 
@@ -131,23 +137,47 @@ router.post("/saved-searches/:id/run", requireAuth, async (req, res): Promise<vo
     return;
   }
 
-  const filters = await parsePromptToFilters(saved.query);
-  const properties = await searchCanadianListings(filters, 20);
-  const scored = scoreProperties(properties, filters);
+  const plan = await parsePromptToFilters(saved.query);
+
+  // Geocode-first: the LLM never picks the city. Resolve the place (with the
+  // curated-city fallback), or default to Toronto when the query has no location.
+  let place: ResolvedPlace | null = null;
+  if (plan.location) {
+    place = (await resolvePlace(plan.location)) ?? placeFromCityMap(plan.location);
+  } else {
+    place = (await resolvePlace("Toronto, Ontario")) ?? placeFromCityMap("Toronto");
+  }
+
+  const publicFilters: ParsedFilters = {
+    location: place?.displayName ?? plan.location,
+    minPrice: plan.minPrice,
+    maxPrice: plan.maxPrice,
+    minBedrooms: plan.minBedrooms,
+    minBathrooms: plan.minBathrooms,
+    propertyType: plan.propertyType,
+    minSqft: plan.minSqft,
+    maxSqft: plan.maxSqft,
+    keywords: plan.keywords,
+  };
+
+  const properties = place ? await searchCanadianListings(plan, place, 20) : [];
+  const scored = scoreProperties(properties, plan);
 
   let summary: string;
   if (scored.length > 0) {
     try {
-      summary = await generateSearchSummary(saved.query, filters, scored.length);
+      summary = await generateSearchSummary(saved.query, publicFilters, scored.length);
     } catch (err) {
       req.log.warn({ err }, "Saved-search summary generation failed; using fallback");
-      summary = `Found ${scored.length} live listings matching "${filters.location ?? saved.query}".`;
+      summary = `Found ${scored.length} live listings in ${place?.displayName ?? "Canada"}.`;
     }
+  } else if (!place && plan.location) {
+    summary = `We couldn't pinpoint "${plan.location}" in Canada. Edit this saved search with a city, neighbourhood, postal code, or nearby landmark.`;
   } else if (!hasFirecrawl()) {
     summary =
       "Live listings are unavailable because the data provider isn't configured.";
   } else {
-    summary = `No live listings for "${filters.location ?? saved.query}" right now. Try broadening your criteria.`;
+    summary = `No live listings in ${place?.displayName ?? "that area"} right now. Try broadening your criteria.`;
   }
 
   // Record the run honestly so the UI can show "last run" + count.
@@ -155,7 +185,7 @@ router.post("/saved-searches/:id/run", requireAuth, async (req, res): Promise<vo
     await db
       .update(savedSearchesTable)
       .set({
-        parsedFilters: filters,
+        parsedFilters: publicFilters,
         lastRunAt: new Date(),
         lastResultCount: scored.length,
       })
@@ -168,7 +198,7 @@ router.post("/saved-searches/:id/run", requireAuth, async (req, res): Promise<vo
     properties: scored,
     totalCount: scored.length,
     searchSummary: summary,
-    parsedFilters: filters,
+    parsedFilters: publicFilters,
   });
 });
 

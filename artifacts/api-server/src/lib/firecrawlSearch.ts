@@ -1,6 +1,33 @@
 import { logger } from "./logger";
-import type { ParsedFilters, PropertyResult } from "./propertySearch";
-import { hydrateGeocode, getGeocodeForId } from "./geocode";
+import type { ParsedFilters, QueryPlan, PropertyResult } from "./propertySearch";
+import {
+  hydrateGeocode,
+  getGeocodeForId,
+  resolvePlace,
+  awaitGeocodeWithin,
+  haversineKm,
+  placeFromProvinceCode,
+  type ResolvedPlace,
+} from "./geocode";
+
+// "near X" means roughly a 20-minute walk unless the user gave an explicit radius.
+const WALK_RADIUS_KM = 1.6;
+// Near queries get a larger sync geocode budget — confirming walking distance is
+// the explicit intent, so it's worth a few extra throttled Nominatim lookups.
+const NEAR_GEOCODE_BUDGET_MS = 13000;
+
+// Toronto fallback so the home page's "featured" never breaks if Nominatim is
+// briefly unavailable. (Featured is an intentional curated city, not a guess.)
+const TORONTO_PLACE: ResolvedPlace = {
+  lat: 43.6532,
+  lng: -79.3832,
+  city: "Toronto",
+  borough: null,
+  province: "ON",
+  provinceName: "Ontario",
+  displayName: "Toronto, ON",
+  precise: false,
+};
 
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v1";
@@ -225,6 +252,8 @@ function citySlug(location: string): string {
     .split(",")[0]
     .trim()
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // strip diacritics: Montréal -> montreal, Québec -> quebec
     .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-");
@@ -277,24 +306,42 @@ const TYPE_TO_ZOLO: Record<string, string> = {
   townhouse: "townhouses",
 };
 
-function buildCandidateUrls(filters: ParsedFilters): string[] {
-  const location = filters.location?.trim() || "Toronto";
-  const slug = citySlug(location);
-  const province = CITY_PROVINCE[slug] ?? "on";
-  const urls: string[] = [];
-
-  // Realtor.ca (user's preferred source)
-  urls.push(`https://www.realtor.ca/${province}/${slug}/real-estate`);
-
-  // Zolo.ca fallback — clean URLs, aggregates Canadian MLS listings
-  const zoloType = filters.propertyType ? TYPE_TO_ZOLO[filters.propertyType] : undefined;
-  urls.push(
-    zoloType
-      ? `https://www.zolo.ca/${slug}-real-estate/${zoloType}`
-      : `https://www.zolo.ca/${slug}-real-estate`
+function buildCandidateUrls(place: ResolvedPlace, propertyType: string | null): string[] {
+  const provSlug = place.province.toLowerCase();
+  const citySlugVal = citySlug(place.city);
+  const boroughSlugVal = place.borough ? citySlug(place.borough) : null;
+  // Try the most specific area first (borough), then fall back to the city. If
+  // the borough has no source page the scrape returns nothing and we fall
+  // through. No silent "Toronto" default — the area comes from a resolved place.
+  const slugs = Array.from(
+    new Set([boroughSlugVal, citySlugVal].filter((s): s is string => !!s)),
   );
 
+  const urls: string[] = [];
+  for (const slug of slugs) {
+    urls.push(`https://www.realtor.ca/${provSlug}/${slug}/real-estate`);
+  }
+  const zoloType = propertyType ? TYPE_TO_ZOLO[propertyType] : undefined;
+  for (const slug of slugs) {
+    urls.push(
+      zoloType
+        ? `https://www.zolo.ca/${slug}-real-estate/${zoloType}`
+        : `https://www.zolo.ca/${slug}-real-estate`,
+    );
+  }
   return urls;
+}
+
+/**
+ * Curated-city fallback used only when Nominatim can't resolve a plain city
+ * name (e.g. transient outage). Returns null for anything not in the map so the
+ * caller can honestly report it couldn't pin the place — never a guess.
+ */
+export function placeFromCityMap(location: string): ResolvedPlace | null {
+  const slug = citySlug(location);
+  const province = CITY_PROVINCE[slug];
+  if (!province) return null;
+  return placeFromProvinceCode(slug.replace(/-/g, " "), province);
 }
 
 function normalizeType(raw?: string): string {
@@ -392,15 +439,82 @@ function applyHardFilters(props: PropertyResult[], filters: ParsedFilters): Prop
   });
 }
 
+function normLoc(s: string): string {
+  return (s ?? "").toLowerCase().replace(/[^a-z]/g, "");
+}
+
 /**
- * Fetch REAL Canadian listings via Firecrawl. Tries Realtor.ca first, then
- * Zolo.ca. Returns [] if nothing real could be retrieved (no fake fallback).
+ * True when a scraped listing plausibly belongs to the resolved area. Defends
+ * against aggregate pages bleeding in a neighbouring city (e.g. a Kitchener row
+ * appearing on a Toronto query). Lenient by design: empty city/province pass
+ * (we already scraped the correct city URL); a present-but-mismatched city is
+ * dropped.
+ */
+function matchesArea(p: PropertyResult, place: ResolvedPlace): boolean {
+  const cityCands = [place.city, place.borough]
+    .filter((c): c is string => !!c)
+    .map(normLoc)
+    .filter(Boolean);
+  const pcity = normLoc(p.city);
+  const cityOk =
+    !pcity ||
+    cityCands.length === 0 ||
+    cityCands.some((c) => pcity.includes(c) || c.includes(pcity));
+
+  const pprov = normLoc(p.state);
+  const provOk =
+    !pprov ||
+    pprov === normLoc(place.province) ||
+    (!!place.provinceName &&
+      (pprov.includes(normLoc(place.provinceName)) ||
+        normLoc(place.provinceName).includes(pprov)));
+
+  return cityOk && provOk;
+}
+
+/**
+ * Rank "near X" results closest-first: verified-within-radius listings (by
+ * distance) first, then not-yet-geocoded listings (still in the right city —
+ * proximity unverified, never a fabricated pin). When `dropFar` is set,
+ * verified-too-far listings are removed (walking-distance "near" queries);
+ * otherwise they sort last. Coordless listings are always kept so sparse
+ * geocoding never hides real in-area inventory.
+ */
+function rankByProximity(
+  props: PropertyResult[],
+  point: { lat: number; lng: number },
+  radiusKm: number,
+  dropFar = false,
+): PropertyResult[] {
+  const withDist = props.map((p) => ({
+    p,
+    d:
+      p.lat != null && p.lng != null
+        ? haversineKm(point, { lat: p.lat, lng: p.lng })
+        : null,
+  }));
+  const near = withDist
+    .filter((x): x is { p: PropertyResult; d: number } => x.d != null && x.d <= radiusKm)
+    .sort((a, b) => a.d - b.d);
+  const unknown = withDist.filter((x) => x.d == null);
+  const far = withDist
+    .filter((x): x is { p: PropertyResult; d: number } => x.d != null && x.d > radiusKm)
+    .sort((a, b) => a.d - b.d);
+  const ordered = dropFar ? [...near, ...unknown] : [...near, ...unknown, ...far];
+  return ordered.map((x) => x.p);
+}
+
+/**
+ * Fetch REAL Canadian listings via Firecrawl for an ALREADY-RESOLVED place
+ * (the geographic source of truth). Tries Realtor.ca first, then Zolo.ca.
+ * Returns [] if nothing real could be retrieved (no fake fallback).
  */
 export async function searchCanadianListings(
-  filters: ParsedFilters,
-  maxResults = 24
+  filters: QueryPlan,
+  place: ResolvedPlace,
+  maxResults = 24,
 ): Promise<PropertyResult[]> {
-  const urls = buildCandidateUrls(filters);
+  const urls = buildCandidateUrls(place, filters.propertyType);
 
   for (const url of urls) {
     const raw = await firecrawlScrape(url);
@@ -409,22 +523,70 @@ export async function searchCanadianListings(
     const mapped = raw
       .map((l) => mapListing(l, url))
       .filter((p): p is PropertyResult => p !== null);
-
     const deduped = Array.from(new Map(mapped.map((p) => [p.id, p])).values());
+
+    // Verify the area. The label heuristic guards against an aggregate page
+    // bleeding in a neighbouring city (the original Kitchener bug).
+    const areaFiltered = deduped.filter((p) => matchesArea(p, place));
+    let inArea: PropertyResult[];
+    if (areaFiltered.length > 0) {
+      inArea = areaFiltered;
+    } else {
+      // The heuristic dropped everything: keep only rows whose city label is
+      // missing/ambiguous (cannot contradict the resolved area) — never explicit
+      // other-city rows. If none qualify, move to the next source rather than
+      // risk returning a wrong city.
+      const ambiguous = deduped.filter((p) => !normLoc(p.city));
+      if (ambiguous.length === 0) continue;
+      inArea = ambiguous;
+    }
+
     // Honest filtering: never return listings that violate the user's hard
     // constraints (price/beds/baths). If filters eliminate everything, keep
-    // trying the next source and ultimately return [] so the UI can honestly
-    // say "no matches — try broadening your criteria".
-    const finalList = applyHardFilters(deduped, filters).slice(0, maxResults);
+    // trying the next source and ultimately return [].
+    const hardFiltered = applyHardFilters(inArea, filters);
+    if (hardFiltered.length === 0) continue;
 
-    if (finalList.length > 0) {
-      // Apply cached coordinates synchronously and enqueue the rest; never
+    let finalList = hardFiltered;
+    if (filters.isNear && place.precise && place.lat != null && place.lng != null) {
+      // "Near" query with an exact landmark POINT → walking distance. Verify as
+      // many listing coordinates as the time budget allows (single throttled
+      // worker — policy-compliant).
+      const point = { lat: place.lat, lng: place.lng };
+      const radiusKm = filters.nearRadiusKm ?? WALK_RADIUS_KM;
+      await awaitGeocodeWithin(finalList, NEAR_GEOCODE_BUDGET_MS);
+      const distOf = (p: PropertyResult): number | null =>
+        p.lat != null && p.lng != null
+          ? haversineKm(point, { lat: p.lat, lng: p.lng })
+          : null;
+      const verifiedNear = finalList
+        .map((p) => ({ p, d: distOf(p) }))
+        .filter((x): x is { p: PropertyResult; d: number } => x.d != null && x.d <= radiusKm)
+        .sort((a, b) => a.d - b.d)
+        .map((x) => x.p);
+      if (verifiedNear.length > 0) {
+        // Confirmed within walking distance — show exactly these, closest-first.
+        finalList = verifiedNear;
+      } else {
+        // Nothing confirmed within walking distance: drop verified-too-far rows
+        // and keep only not-yet-geocoded ones in the right area (proximity
+        // unconfirmed, never a fabricated pin). Frequently empty — honest.
+        finalList = rankByProximity(finalList, point, radiusKm, true);
+      }
+    } else {
+      // Area search (or a "near" query we couldn't pin to an exact point):
+      // apply cached coordinates synchronously and enqueue the rest; never
       // blocks on Nominatim (honest pins only — pending listings stay pin-less).
       await hydrateGeocode(finalList);
-      rememberProperties(finalList);
-      logger.info({ url, returned: finalList.length }, "Live listings retrieved");
-      return finalList;
     }
+
+    finalList = finalList.slice(0, maxResults);
+    rememberProperties(finalList);
+    logger.info(
+      { url, returned: finalList.length, area: place.displayName, near: filters.isNear },
+      "Live listings retrieved",
+    );
+    return finalList;
   }
 
   return [];
@@ -438,17 +600,24 @@ export async function getFeaturedCanadianListings(count = 6): Promise<PropertyRe
   if (featuredCache && featuredCache.expires > Date.now()) {
     return featuredCache.props.slice(0, count);
   }
-  const props = await searchCanadianListings({
-    location: "Toronto",
-    minPrice: null,
-    maxPrice: null,
-    minBedrooms: null,
-    minBathrooms: null,
-    propertyType: null,
-    minSqft: null,
-    maxSqft: null,
-    keywords: [],
-  }, 12);
+  const place = (await resolvePlace("Toronto, Ontario")) ?? TORONTO_PLACE;
+  const props = await searchCanadianListings(
+    {
+      location: place.displayName,
+      minPrice: null,
+      maxPrice: null,
+      minBedrooms: null,
+      minBathrooms: null,
+      propertyType: null,
+      minSqft: null,
+      maxSqft: null,
+      keywords: [],
+      isNear: false,
+      nearRadiusKm: null,
+    },
+    place,
+    12,
+  );
 
   if (props.length > 0) {
     featuredCache = { props, expires: Date.now() + FEATURED_TTL_MS };
